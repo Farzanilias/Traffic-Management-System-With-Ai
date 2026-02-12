@@ -51,3 +51,7 @@ ALTER TABLE Violations ADD COLUMN evidence_image VARCHAR(255);
 ALTER TABLE Fines ADD COLUMN Amount DECIMAL(10, 2);
 
 UPDATE loginuser SET role = 'admin' WHERE username = 'devAdmin';
+
+ALTER TABLE Violations
+ADD COLUMN violation_hash VARCHAR(64);
+DESCRIBE Violations;

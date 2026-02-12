@@ -12,6 +12,10 @@ from ultralytics import YOLO
 import easyocr
 import io
 from flask import send_from_directory
+from audit.schema import canonical_violation_payload
+from audit.hasher import hash_violation
+from datetime import datetime
+
 
 # initialize flask app
 app = Flask(__name__)
@@ -622,8 +626,26 @@ def autodetect_violation():
         cursor.execute(query, values)
         db.commit()
         
+
+        violation_id = cursor.lastrowid
+        payload = canonical_violation_payload(
+            violation_id=violation_id,
+            license_plate=plate_number,
+            violation_type=violation_type,
+            fine_amount=default_fine,
+            location=default_location,
+            timestamp=datetime.utcnow(),
+            evidence_filename=unique_filename
+        )
+        v_hash = hash_violation(payload)
+        cursor.execute(
+            "UPDATE Violations SET violation_hash=%s WHERE ViolationID=%s",
+            (v_hash, violation_id)
+        )
+        db.commit()
         cursor.close()
         db.close()
+
         
         return jsonify({
             "message": "Success! Violation added.",
