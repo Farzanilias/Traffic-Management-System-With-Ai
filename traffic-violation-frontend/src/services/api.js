@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const API_URL = "http://127.0.0.1:5000"; // Flask Backend URL
+const API_URL = process.env.REACT_APP_BACKEND_URL || "http://127.0.0.1:5000"; // Flask Backend URL (env override)
+
+export const BACKEND_URL = API_URL;
 
 // Set up axios instance with default headers
 const api = axios.create({
@@ -28,20 +30,8 @@ export const getViolations = async (licensePlate) => {
 };
 
 export const getViolationDetails = async (violationID) => {
-  const token = localStorage.getItem('token');
-  const response = await fetch(`http://localhost:5000/get-violation/${violationID}`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-  });
-  
-  if (!response.ok) {
-    throw new Error('Failed to fetch violation details');
-  }
-  
-  return response.json();
+  const res = await api.get(`/get-violation/${violationID}`);
+  return res.data;
 };
 export const payFine = async (violationID, paymentMethod, paymentDetails = null) => {
   const payload = {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Dashboard.css'; 
 import { useNavigate } from 'react-router-dom';
+import { BACKEND_URL } from '../services/api';
 import { 
     FaCar, 
     FaExclamationTriangle, 
@@ -24,7 +25,7 @@ const Dashboard = () => {
                     return;
                 }
 
-                const response = await fetch('http://localhost:5000/dashboard-stats', {
+                const response = await fetch(`${BACKEND_URL}/dashboard-stats`, {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                     },

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Vehicles.css";
+import { BACKEND_URL } from '../services/api';
 
 function Vehicles() {
   const [vehicles, setVehicles] = useState([]);
@@ -17,7 +18,7 @@ function Vehicles() {
           return;
         }
 
-        const response = await fetch('http://localhost:5000/get-vehicles', {
+        const response = await fetch(`${BACKEND_URL}/get-vehicles`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -59,7 +60,7 @@ function Vehicles() {
 
     try {
 
-      const response = await fetch(`http://localhost:5000/delete-vehicle/${licensePlate}`, {
+      const response = await fetch(`${BACKEND_URL}/delete-vehicle/${licensePlate}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import './AutoDetect.css'; 
+import { BACKEND_URL } from '../services/api';
 
 const AutoDetect = () => {
     const [file, setFile] = useState(null);
@@ -41,7 +42,7 @@ const AutoDetect = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:5000/autodetect', {
+            const response = await fetch(`${BACKEND_URL}/autodetect`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

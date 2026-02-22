@@ -16,3 +16,4 @@ evidence_uploads/
 
 # Environment files
 .env
+traffic-violation-frontend/.env

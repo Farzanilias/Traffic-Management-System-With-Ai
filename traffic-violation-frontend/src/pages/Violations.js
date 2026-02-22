@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getViolations } from "../services/api";
+import { getViolations, BACKEND_URL } from "../services/api";
 import "./Violations.css";
 
 function Violations() {
@@ -92,7 +92,7 @@ function Violations() {
                   <td>{v.Location}</td>
                   <td>
                     {v.evidence_image ? (
-                      <a href={`http://localhost:5000/evidence/${v.evidence_image}`} target="_blank" rel="noopener noreferrer">
+                      <a href={`${BACKEND_URL}/evidence/${v.evidence_image}`} target="_blank" rel="noopener noreferrer">
                         View Image
                       </a>
                     ) : (

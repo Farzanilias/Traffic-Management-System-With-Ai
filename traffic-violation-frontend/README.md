@@ -1,4 +1,4 @@
-# Getting Started with Create React App
+sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'root'; FLUSH PRIVILEGES;" && sudo mysql -u root -proot -e "SELECT USER(), VERSION();"# Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 

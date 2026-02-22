@@ -1,9 +1,11 @@
+import os
 import requests
 import time
 import random
 
-# The API endpoint wher its sent
-API_ENDPOINT = "http://localhost:5000/iot/report-speeding"
+# The API endpoint where it's sent (can be overridden via BACKEND_URL env var)
+API_BASE = os.environ.get('BACKEND_URL', 'http://localhost:5000')
+API_ENDPOINT = f"{API_BASE}/iot/report-speeding"
 
 # The secret key to authenticate with the server
 API_KEY = "my-secret-iot-key"

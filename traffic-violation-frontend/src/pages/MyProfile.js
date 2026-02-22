@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import '../pages/Dashboard.css'; 
 import { useNavigate } from 'react-router-dom';
 import { FaUserCircle, FaReceipt, FaCar } from 'react-icons/fa';
+import { BACKEND_URL } from '../services/api';
 
 const MyProfile = () => {
     const [stats, setStats] = useState(null);
@@ -18,7 +19,7 @@ const MyProfile = () => {
                     return;
                 }
 
-                const response = await fetch('http://localhost:5000/my-profile-stats', {
+                const response = await fetch(`${BACKEND_URL}/my-profile-stats`, {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                     },

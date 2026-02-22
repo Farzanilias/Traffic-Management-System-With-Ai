@@ -37,7 +37,7 @@ except Exception as e:
 
 CORS(app, resources={
     r"/*": {
-        "origins": "http://localhost:3000",
+        "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -170,7 +170,7 @@ def protected():
 
 def _build_cors_preflight_response():
     response = jsonify({"message": "Preflight request received"})
-    response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
+    response.headers.add("Access-Control-Allow-Origin", "*")
     response.headers.add("Access-Control-Allow-Headers", "Content-Type")
     response.headers.add("Access-Control-Allow-Methods", "POST")
     return response
