@@ -12,10 +12,22 @@ from ultralytics import YOLO
 import easyocr
 import io
 from flask import send_from_directory
+import base64
+import traceback
+import requests  # <-- ADDED for API requests
+
+# Optional: detect whether PaddleOCR package is installed.
+reader_paddle = None
+paddle_available = False
+import importlib.util
+if importlib.util.find_spec('paddleocr') is not None:
+    paddle_available = True
+    print("PaddleOCR package is installed (not imported). Set ENABLE_PADDLEOCR=1 to enable runtime use.")
+else:
+    print("PaddleOCR package not installed; falling back to EasyOCR.")
 from audit.schema import canonical_violation_payload
 from audit.hasher import hash_violation
 from datetime import datetime
-
 
 # initialize flask app
 app = Flask(__name__)
@@ -23,16 +35,47 @@ app.config['JWT_SECRET_KEY'] = 'secretig'
 jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
 
-
-print("Loading ML models and EasyOCR...")
+print("Loading ML models and OCR readers...")
 try:
-    helmet_model = YOLO("Weights/best.pt")
-    helmet_classNames = ['With Helmet', 'Without Helmet']
-    plate_model = YOLO("Weights/license_plate_detector.pt") 
+    HELMET_MODEL_PATH = os.environ.get('HELMET_MODEL_PATH', 'Weights/best.pt')
+    PLATE_MODEL_PATH = os.environ.get('PLATE_MODEL_PATH', 'Weights/license_plate_detector.pt')
+    helmet_model = YOLO(HELMET_MODEL_PATH)
+    raw_names = getattr(helmet_model, 'names', [])
+    if isinstance(raw_names, dict):
+        helmet_classNames = list(raw_names.values())
+    else:
+        helmet_classNames = list(raw_names or [])
+    
+    generic_keywords = {'person', 'car', 'motorcycle', 'truck', 'bicycle'}
+    lower_names = set([n.lower() for n in helmet_classNames if isinstance(n, str)])
+    if lower_names & generic_keywords:
+        bak_path = HELMET_MODEL_PATH + '.bak'
+        if os.path.exists(bak_path):
+            print(f"Loaded model at {HELMET_MODEL_PATH} looks generic. Falling back to {bak_path}")
+            fallback_path = bak_path
+            if not fallback_path.endswith('.pt'):
+                fallback_path = bak_path + '.pt'
+                try:
+                    import shutil
+                    shutil.copyfile(bak_path, fallback_path)
+                except Exception as e:
+                    pass
+            helmet_model = YOLO(fallback_path)
+            raw_names = getattr(helmet_model, 'names', [])
+            if isinstance(raw_names, dict):
+                helmet_classNames = list(raw_names.values())
+            else:
+                helmet_classNames = list(raw_names or [])
+        else:
+            print(f"Warning: Loaded helmet model at {HELMET_MODEL_PATH} appears generic.")
+    
+    plate_model = None 
     reader = easyocr.Reader(['en'])
-    print("Models and EasyOCR loaded successfully.")
+    print(f"Loaded helmet model: {HELMET_MODEL_PATH} with classes: {helmet_classNames}")
+    print(f"Loaded plate model: USING ROBOFLOW CLOUD API")
+    print("EasyOCR loaded successfully.")
 except Exception as e:
-    print(f"ERROR: Could not load models or EasyOCR. {e}")
+    print(f"ERROR: Could not load models or OCR readers. {e}")
 
 
 CORS(app, resources={
@@ -43,7 +86,6 @@ CORS(app, resources={
     }
 }) 
 
-# function to create a new database connection
 def get_db_connection():
     try:
         db = mysql.connector.connect(
@@ -57,16 +99,12 @@ def get_db_connection():
         print("Error connecting to MySQL:", e)
         return None
 
-
-# testing database connection
 @app.route('/test-db', methods=['GET'])
 def test_db():
-   # will return json response with the database name
     try:
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Failed to connect to the database"}), 500
-
         cursor = db.cursor()
         cursor.execute("SELECT DATABASE();")
         db_name = cursor.fetchone()[0]
@@ -76,7 +114,6 @@ def test_db():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-#authentication routes
 @app.route('/login', methods=['POST', 'OPTIONS'])
 def login():
     if request.method == 'OPTIONS':
@@ -103,9 +140,11 @@ def login():
         cursor.close()
         db.close()
 
-        if user:
-            user_password=user[0]
-            user_role=user[1]
+        if not user:
+            return jsonify({"success": False, "message": "Invalid credentials"}), 401
+
+        user_password = user[0]
+        user_role = user[1]
 
         if bcrypt.check_password_hash(user_password, password):
             token = create_access_token(identity=username, additional_claims={"role": user_role})
@@ -132,23 +171,17 @@ def register():
         return jsonify({"message": "Username and password required"}), 400
 
     try:
-        # pssword hashing
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-        
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
-        
-        # check user exits or not already
         cursor.execute("SELECT username FROM loginuser WHERE username = %s", (username,))
         if cursor.fetchone():
             cursor.close()
             db.close()
             return jsonify({"message": "Username already exists"}), 400
 
-        # insert new user
         cursor.execute(
             "INSERT INTO loginuser (username, password) VALUES (%s, %s)",
             (username, hashed_password)
@@ -156,9 +189,7 @@ def register():
         db.commit()
         cursor.close()
         db.close()
-        
         return jsonify({"message": "User registered successfully"}), 201
-        
     except mysql.connector.Error as e:
         return jsonify({"error": str(e)}), 500
 
@@ -175,71 +206,303 @@ def _build_cors_preflight_response():
     response.headers.add("Access-Control-Allow-Methods", "POST")
     return response
 
-
-
-
-
-
 #model stuff
 def detect_violation_and_plate(img):
-
     violation_found = False
     violation_type_found = ""
     plate_text_clean = None
     annotated_img = img.copy()
     
-    # Run HelmetDetection
-    helmet_results = helmet_model(img)
+    try:
+        helmet_results = helmet_model(img)
+    except Exception as e:
+        print(f"Helmet model inference error: {e}")
+        print(traceback.format_exc())
+        return "", None, annotated_img
 
-    for r in helmet_results:
-        boxes = r.boxes
-        for box in boxes:
-            cls = int(box.cls[0])
-            class_name = helmet_classNames[cls]
+    try:
+        for r in helmet_results:
+            boxes = getattr(r, 'boxes', []) or []
+            for box in boxes:
+                try:
+                    cls_val = None
+                    if hasattr(box, 'cls'):
+                        try:
+                            cls_val = int(box.cls[0])
+                        except Exception:
+                            try:
+                                cls_val = int(box.cls)
+                            except Exception:
+                                cls_val = None
+                    if cls_val is None:
+                        continue
 
-            if class_name == 'Without Helmet':
-                violation_found = True
-                violation_type_found = class_name
-                #Draw the -Without Helmet box
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 0, 255), 2) # Red box
-                cv2.putText(annotated_img, f'{class_name}', (x1, y1 - 10),cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-                break
-        if violation_found:
-            break
+                    class_name = helmet_classNames[cls_val] if 0 <= cls_val < len(helmet_classNames) else str(cls_val)
+
+                    try:
+                        try:
+                            coords = box.xyxy[0]
+                        except Exception:
+                            coords = np.array(box.xyxy).reshape(-1)[:4]
+                        x1, y1, x2, y2 = map(int, coords)
+                        lname = str(class_name).lower()
+                        if 'without' in lname or 'no helmet' in lname or 'no-helmet' in lname:
+                            color = (0, 0, 255)
+                        else:
+                            color = (0, 255, 0)
+                        cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 2)
+                        cv2.putText(annotated_img, f'{class_name}', (x1, max(20, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                        if 'without' in str(class_name).lower():
+                            violation_found = True
+                            violation_type_found = 'Without Helmet'
+                    except Exception as e:
+                        pass
+                except Exception as e:
+                    pass
+    except Exception as e:
+        pass
     
-    # If a violation was found, find the license plate
     if violation_found:
         print("Violation detected! Searching for license plate...")
         
-        plate_results = plate_model(img, conf=0.1) 
+        ROBOFLOW_API_KEY = "KqzgJ8XEdQAFGtUdniRg" # Update this to your Roboflow key!
+        PROJECT_ENDPOINT = "https://detect.roboflow.com/indian-car-bike-number-plate/2"
         
-        for r_plate in plate_results:
-            boxes_plate = r_plate.boxes
-            if len(boxes_plate) > 0:
-                best_plate_box = boxes_plate[0] 
-                px1, py1, px2, py2 = map(int, best_plate_box.xyxy[0])
-                
-                # Crop the image
-                padding = 5
-                py1, py2 = max(0, py1 - padding), min(img.shape[0], py2 + padding)
-                px1, px2 = max(0, px1 - padding), min(img.shape[1], px2 + padding)
-                
-                plate_crop = img[py1:py2, px1:px2]
+        candidates = []
+        try:
+            retval, buffer = cv2.imencode('.jpg', img)
+            img_b64 = base64.b64encode(buffer).decode("ascii")
+            
+            resp = requests.post(
+                PROJECT_ENDPOINT,
+                params={"api_key": ROBOFLOW_API_KEY, "confidence": 10}, 
+                data=img_b64,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            
+            if resp.status_code == 200:
+                predictions = resp.json().get("predictions", [])
+                for pred in predictions:
+                    width = pred["width"]
+                    height = pred["height"]
+                    x1 = int(pred["x"] - (width / 2))
+                    y1 = int(pred["y"] - (height / 2))
+                    x2 = int(pred["x"] + (width / 2))
+                    y2 = int(pred["y"] + (height / 2))
+                    score = pred["confidence"]
+                    area = width * height
+                    candidates.append((score, area, x1, y1, x2, y2))
+        except Exception as e:
+            pass
 
-                try:
-                    # Run OCR
-                    ocr_result = reader.readtext(plate_crop)
-                    if ocr_result:
-                        plate_text = ocr_result[0][1]
-                        plate_text_clean = "".join(filter(str.isalnum, plate_text)).upper()
-                        print(f"Plate found: {plate_text_clean}")
-                        #Draw "License Plate" box 
-                        cv2.rectangle(annotated_img, (px1, py1), (px2, py2), (0, 255, 0), 2) # Green box
-                        cv2.putText(annotated_img, f'{plate_text_clean}', (px1, py1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                        break 
-                except Exception as e:
-                    print(f"Error during OCR: {e}")
+        candidates.sort(key=lambda t: (t[0] * t[1]), reverse=True)
+
+        # =====================================================================
+        # OLD OCR LOGIC (EasyOCR / PaddleOCR) - COMMENTED OUT FOR FUTURE USE
+        # =====================================================================
+        """
+        def preprocess_for_ocr(crop):
+            try:
+                gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            except Exception:
+                gray = crop
+            h, w = gray.shape[:2]
+            target_h = 200
+            scale = max(1, target_h // max(1, h))
+            if scale > 1:
+                gray = cv2.resize(gray, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+            try:
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                gray = clahe.apply(gray)
+            except Exception:
+                pass
+            gray = cv2.bilateralFilter(gray, 9, 75, 75)
+            try:
+                gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+            except Exception:
+                pass
+            try:
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+                gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
+            except Exception:
+                pass
+            return gray
+
+        def extra_preprocess_variants(crop):
+            variants = []
+            try:
+                gray = preprocess_for_ocr(crop)
+                variants.append(gray)
+            except Exception:
+                pass
+            try:
+                inv = 255 - cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+                variants.append(inv)
+            except Exception:
+                pass
+            try:
+                kernel = np.array([[0,-1,0],[-1,5,-1],[0,-1,0]])
+                sharp = cv2.filter2D(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), -1, kernel)
+                variants.append(sharp)
+            except Exception:
+                pass
+            try:
+                imgf = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY).astype(np.float32)/255.0
+                for g in [0.8, 1.2, 1.5]:
+                    gamma = np.clip(255.0 * np.power(imgf, g), 0, 255).astype(np.uint8)
+                    variants.append(gamma)
+            except Exception:
+                pass
+            return variants
+
+        for cand in candidates:
+            _, _, px1, py1, px2, py2 = cand
+            padding = 8
+            py1c, py2c = max(0, py1 - padding), min(img.shape[0], py2 + padding)
+            px1c, px2c = max(0, px1 - padding), min(img.shape[1], px2 + padding)
+            plate_crop = img[py1c:py2c, px1c:px2c]
+
+            if plate_crop.size == 0:
+                continue
+
+            tried_text = None
+            variants = [preprocess_for_ocr(plate_crop), plate_crop]
+            angles = [0, 90, 270]
+            for var in variants:
+                for ang in angles:
+                    try:
+                        if ang != 0:
+                            M = cv2.getRotationMatrix2D((var.shape[1]//2, var.shape[0]//2), ang, 1)
+                            rotated = cv2.warpAffine(var, M, (var.shape[1], var.shape[0]))
+                        else:
+                            rotated = var
+
+                        plate_text_clean = None
+                        try:
+                            if paddle_available and os.environ.get('ENABLE_PADDLEOCR') == '1':
+                                try:
+                                    global reader_paddle
+                                    if reader_paddle is None:
+                                        import paddleocr as _paddleocr_mod
+                                        reader_paddle = _paddleocr_mod.PaddleOCR(use_textline_orientation=True, lang='en')
+                                    try:
+                                        ocr_result = reader_paddle.ocr(rotated)
+                                    except TypeError:
+                                        ocr_result = reader_paddle.predict(rotated)
+                                    texts = []
+                                    for item in ocr_result:
+                                        try:
+                                            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                                                candidate = item[1]
+                                                if isinstance(candidate, (list, tuple)) and len(candidate) >= 1:
+                                                    t = candidate[0]
+                                                else:
+                                                    t = candidate
+                                            elif isinstance(item, dict) and 'text' in item:
+                                                t = item.get('text')
+                                            elif isinstance(item, str):
+                                                t = item
+                                            else:
+                                                continue
+                                            if t:
+                                                texts.append(str(t))
+                                        except Exception:
+                                            continue
+                                    if texts:
+                                        best = max(texts, key=lambda s: len(''.join(filter(str.isalnum, str(s)))))
+                                        plate_text = str(best)
+                                        plate_text_clean = "".join(filter(str.isalnum, plate_text)).upper()
+                                except Exception as e:
+                                    print(f"PaddleOCR runtime error: {e}")
+                        except Exception:
+                            pass
+
+                        if not plate_text_clean:
+                            try:
+                                ocr_result = reader.readtext(rotated)
+                                texts = []
+                                for item in ocr_result:
+                                    try:
+                                        if isinstance(item, (list, tuple)) and len(item) >= 2:
+                                            if isinstance(item[1], (list, tuple)):
+                                                t = item[1][0]
+                                            else:
+                                                t = item[1]
+                                        elif isinstance(item, str):
+                                            t = item
+                                        else:
+                                            continue
+                                        texts.append(t)
+                                    except Exception:
+                                        continue
+                                if texts:
+                                    best = max(texts, key=lambda s: len(''.join(filter(str.isalnum, str(s)))))
+                                    plate_text = str(best)
+                                    plate_text_clean = "".join(filter(str.isalnum, plate_text)).upper()
+                            except Exception as e:
+                                print(f"EasyOCR error: {e}")
+
+                        if plate_text_clean and len(plate_text_clean) >= 3:
+                            print(f"Plate found: {plate_text_clean}")
+                            cv2.rectangle(annotated_img, (px1c, py1c), (px2c, py2c), (0, 255, 0), 2)
+                            cv2.putText(annotated_img, f'{plate_text_clean}', (px1c, py1c - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                            return violation_type_found, plate_text_clean, annotated_img
+                    except Exception as e:
+                        print(f"OCR variant error: {e}")
+        """
+        # =====================================================================
+        # NEW OCR LOGIC: PlateRecognizer API
+        # =====================================================================
+        PLATE_REC_TOKEN = "cf0c77976c4e4fc7f23ec6307467d9b0b950b522"
+        
+        for cand in candidates:
+            _, _, px1, py1, px2, py2 = cand
+            
+            # FIXED: Increased padding to give API more context
+            padding = 40
+            py1c, py2c = max(0, py1 - padding), min(img.shape[0], py2 + padding)
+            px1c, px2c = max(0, px1 - padding), min(img.shape[1], px2 + padding)
+            plate_crop = img[py1c:py2c, px1c:px2c]
+
+            if plate_crop.size == 0:
+                continue
+
+            try:
+                retval, buffer = cv2.imencode('.jpg', plate_crop)
+                if not retval:
+                    continue
+                
+                print("Sending padded crop to PlateRecognizer API...")
+                response = requests.post(
+                    'https://api.platerecognizer.com/v1/plate-reader/',
+                    headers={'Authorization': f'Token {PLATE_REC_TOKEN}'},
+                    # FIXED: Send as a proper multipart/form-data file tuple
+                    files={'upload': ('plate.jpg', buffer.tobytes(), 'image/jpeg')},
+                    data={'regions': 'in'} # Optimizes for Indian plate layouts!
+                )
+                
+                res_json = response.json()
+                
+                # DEBUG: Print the exact raw data PlateRecognizer sends back!
+                print(f"--- PlateRecognizer Raw JSON ---: {res_json}")
+                
+                if res_json.get('results') and len(res_json['results']) > 0:
+                    # Grab the plate text and clean it up
+                    plate_text_clean = res_json['results'][0]['plate'].upper()
+                    print(f"Plate found by PlateRecognizer: {plate_text_clean}")
+                    
+                    # Draw the bounding box and text on the final image
+                    cv2.rectangle(annotated_img, (px1c, py1c), (px2c, py2c), (0, 255, 0), 2)
+                    cv2.putText(annotated_img, f'{plate_text_clean}', (px1c, py1c - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                    
+                    return violation_type_found, plate_text_clean, annotated_img
+                else:
+                    print("PlateRecognizer couldn't confidently read this crop.")
+            except Exception as e:
+                print(f"PlateRecognizer API error: {e}")
+
+        # if we reach here, no plate read
+        plate_text_clean = None
             
         if not plate_text_clean:
             print("Violation found, but no license plate was read.")
@@ -248,20 +511,9 @@ def detect_violation_and_plate(img):
 
     return violation_type_found, plate_text_clean, annotated_img
 
-
-
-
-
-
-#store evidence
 @app.route('/evidence/<path:filename>')
 def serve_evidence_image(filename):
     return send_from_directory('evidence_uploads', filename)
-
-
-
-
-#dashboard ststas
 
 @app.route('/dashboard-stats', methods=['GET'])
 @jwt_required()
@@ -272,26 +524,16 @@ def get_dashboard_stats():
             return jsonify({"error": "Database connection failed"}), 500
         
         cursor = db.cursor()
-
-        #Total Vehicles
         cursor.execute("SELECT COUNT(*) FROM Vehicle")
         total_vehicles = cursor.fetchone()[0]
-
-        #Total Violations
         cursor.execute("SELECT COUNT(*) FROM Violations")
         total_violations = cursor.fetchone()[0]
-
-        #Total Fines Paid
         cursor.execute("SELECT SUM(FineAmount) FROM Violations WHERE Status = 'Paid'")
         total_paid_result = cursor.fetchone()[0]
-        total_paid = float(total_paid_result or 0) # Handle None if no paid fines
-
-        #Total Fines Unpaid
+        total_paid = float(total_paid_result or 0)
         cursor.execute("SELECT SUM(FineAmount) FROM Violations WHERE Status = 'Unpaid'")
         total_unpaid_result = cursor.fetchone()[0]
         total_unpaid = float(total_unpaid_result or 0)
-
-        #Most Common Violation
         cursor.execute("""
             SELECT ViolationType, COUNT(*) as count 
             FROM Violations 
@@ -305,7 +547,6 @@ def get_dashboard_stats():
         cursor.close()
         db.close()
 
-        #Return all stats as a single JSON object
         return jsonify({
             "total_vehicles": total_vehicles,
             "total_violations": total_violations,
@@ -321,39 +562,21 @@ def get_dashboard_stats():
             db.close()
         return jsonify({"error": f"An internal server error occurred: {str(e)}"}), 500
 
-
-
-
-
-
-
-
-
-#My Profile page
-
 @app.route('/my-profile-stats', methods=['GET'])
 @jwt_required()
 def get_my_profile_stats():
-    # Get the username from the currently loggedin user
     current_user_username = get_jwt_identity()
-    
     try:
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
         
         cursor = db.cursor()
-
-        #Get user role
         cursor.execute("SELECT role FROM loginuser WHERE username = %s", (current_user_username,))
         role_result = cursor.fetchone()
         user_role = role_result[0] if role_result else "N/A"
-
-        #Get violations reported by this user
         cursor.execute("SELECT COUNT(*) FROM Violations WHERE ReportedBy = %s", (current_user_username,))
         violations_reported = cursor.fetchone()[0]
-
-        #Get vehicles registered by this user
         cursor.execute("SELECT COUNT(*) FROM Vehicle WHERE RegisteredBy = %s", (current_user_username,))
         vehicles_registered = cursor.fetchone()[0]
 
@@ -374,29 +597,15 @@ def get_my_profile_stats():
             db.close()
         return jsonify({"error": f"An internal server error occurred: {str(e)}"}), 500
 
-
-
-
-
-
-
-
-#vehicles stuff
-
-
-# vehicle registration API
 @app.route('/register-vehicle', methods=['POST'])
 def register_vehicle():
-
     data = request.json
     query = "INSERT INTO Vehicle (OwnerName, LicensePlate, VehicleType, Contact, Address) VALUES (%s, %s, %s, %s, %s)"
     values = (data['OwnerName'], data['LicensePlate'], data['VehicleType'], data['Contact'], data['Address'])
-
     try:
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
         cursor.execute(query, values)
         db.commit()
@@ -406,8 +615,6 @@ def register_vehicle():
     except mysql.connector.Error as e:
         return jsonify({"error": str(e)}), 400
 
-
-#delete a vehcile API
 @app.route("/delete-vehicle/<license_plate>", methods=["DELETE"])
 @jwt_required()
 def delete_vehicle(license_plate):
@@ -418,21 +625,14 @@ def delete_vehicle(license_plate):
     if user_role != 'admin':
         return jsonify({"error": "Unauthorized: Only admins can perform this action"}), 403
     
-    
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Delete vehicle from the database
     cursor.execute("DELETE FROM Vehicle WHERE LicensePlate = %s", (license_plate,))
     conn.commit()
-
     cursor.close()
     conn.close()
-
     return jsonify({"message": f"Vehicle {license_plate} deleted successfully"}), 200
 
-
-# get all vehicles API
 @app.route('/get-vehicles', methods=['GET'])
 @jwt_required()
 def get_vehicles():
@@ -440,7 +640,6 @@ def get_vehicles():
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
         cursor.execute("SELECT * FROM Vehicle")
         vehicles = cursor.fetchall()
@@ -458,16 +657,12 @@ def get_vehicles():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-# get vehicle details according to certain license plate
 @app.route('/get-vehicle/<license_plate>', methods=['GET'])
 def get_vehicle(license_plate):
-
     try:
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
         cursor.execute("SELECT * FROM Vehicle WHERE LicensePlate = %s", (license_plate,))
         vehicle = cursor.fetchone()
@@ -491,23 +686,14 @@ def get_vehicle(license_plate):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-
-#violation stuff
-# add violation API
 @app.route('/add-violation', methods=['POST'])
 def add_violation():
-
     data = request.json
-
     try:
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
-
-        # get vehicle ID from license plate
         cursor.execute("SELECT VehicleID FROM Vehicle WHERE LicensePlate = %s", (data['LicensePlate'],))
         vehicle = cursor.fetchone()
 
@@ -517,8 +703,6 @@ def add_violation():
             return jsonify({"error": "Vehicle not found"}), 404
 
         vehicle_id = vehicle[0]
-
-        # insert violation
         query = "INSERT INTO Violations (VehicleID, ViolationType, FineAmount, Location) VALUES (%s, %s, %s, %s)"
         values = (vehicle_id, data['ViolationType'], data['FineAmount'], data['Location'])
         cursor.execute(query, values)
@@ -529,14 +713,6 @@ def add_violation():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-
-
-
-
-
-
-#auto detection stuff
-
 @app.route('/autodetect', methods=['POST'])
 @jwt_required()
 def autodetect_violation():
@@ -544,12 +720,10 @@ def autodetect_violation():
         return jsonify({"error": "No image file provided"}), 400
 
     file = request.files['image_file']
-
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
     try:
-        #Read the image file in memory
         contents = file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -557,58 +731,50 @@ def autodetect_violation():
         if img is None:
             return jsonify({"error": "Invalid image file"}), 400
         
-        #Runing the ML detection function FIRST to get the annotated image
         violation_type, plate_number, annotated_img = detect_violation_and_plate(img)
 
-        #Handle detection results
-        if not violation_type:
-            return jsonify({"message": "No violation was detected."}), 200
-        
-        if not plate_number:
-            return jsonify({"message": f"Violation ({violation_type}) detected, but the license plate was unreadable."}), 200
-
-        #SAVE the fule
-        file_extension = os.path.splitext(file.filename)[1]
-        if not file_extension: # Default to .jpg
-            file_extension = ".jpg"
-            
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        unique_filename = f"{uuid.uuid4()}.jpg"
         save_path = os.path.join("evidence_uploads", unique_filename)
-        
-        # Save the image
-        success, encoded_image = cv2.imencode(file_extension, annotated_img)
+        success, encoded_image = cv2.imencode('.jpg', annotated_img)
+        annotated_b64 = None
         if success:
             with open(save_path, "wb") as f:
                 f.write(encoded_image)
             print(f"Evidence file saved to: {save_path}")
+            try:
+                annotated_b64 = base64.b64encode(encoded_image.tobytes()).decode('utf-8')
+            except Exception:
+                try:
+                    annotated_b64 = base64.b64encode(encoded_image).decode('utf-8')
+                except Exception:
+                    annotated_b64 = None
 
-        #Save to Database
+        if not plate_number:
+            response_payload = {
+                "message": f"Violation ({violation_type}) detected, but the license plate was unreadable.",
+                "violation_type": violation_type,
+                "license_plate": None,
+                "evidence_filename": unique_filename
+            }
+            if annotated_b64:
+                response_payload["annotated_image"] = f"data:image/jpeg;base64,{annotated_b64}"
+            return jsonify(response_payload), 200
+
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-        
-        cursor = db.cursor()
 
-        #Get vehicle ID from license plate
+        cursor = db.cursor()
         cursor.execute("SELECT VehicleID FROM Vehicle WHERE LicensePlate = %s", (plate_number,))
         vehicle = cursor.fetchone()
 
         if not vehicle:
-            #auto regis vehicle
             print(f"Vehicle {plate_number} not found. Auto-registering...")
-            
-            #Get the count
             cursor.execute("SELECT COUNT(*) FROM Vehicle WHERE OwnerName LIKE 'UNKNOWN (%)'")
             count_result = cursor.fetchone()
             unknown_count = count_result[0]
-            
-            #Create the new unique owner name
             new_owner_name = f"UNKNOWN ({unknown_count + 1}) (Auto-Detected)"
-
-            #Define the query
             register_query = """INSERT INTO Vehicle(OwnerName, LicensePlate, VehicleType, Contact, Address) VALUES (%s, %s, %s, %s, %s)"""
-            
-            #Use the 'new_owner_name' variable
             placeholder_values = (new_owner_name, plate_number, "Motorcycle", "N/A", "N/A")
             cursor.execute(register_query, placeholder_values)
             db.commit()
@@ -617,15 +783,13 @@ def autodetect_violation():
         else:
             vehicle_id = vehicle[0]
 
-        default_fine = 500  # Set a default fine for 'No Helmet'
+        default_fine = 500 
         default_location = "Auto-Detected via Camera"
 
-        # Insert violation
         query = "INSERT INTO Violations (VehicleID, ViolationType, FineAmount, Location, evidence_image) VALUES (%s, %s, %s, %s, %s)"
         values = (vehicle_id, violation_type, default_fine, default_location, unique_filename)
         cursor.execute(query, values)
         db.commit()
-        
 
         violation_id = cursor.lastrowid
         payload = canonical_violation_payload(
@@ -646,12 +810,16 @@ def autodetect_violation():
         cursor.close()
         db.close()
 
-        
-        return jsonify({
+        response_payload = {
             "message": "Success! Violation added.",
             "violation_type": violation_type,
-            "license_plate": plate_number
-        }), 201
+            "license_plate": plate_number,
+            "evidence_filename": unique_filename
+        }
+        if annotated_b64:
+            response_payload["annotated_image"] = f"data:image/jpeg;base64,{annotated_b64}"
+
+        return jsonify(response_payload), 201
 
     except Exception as e:
         print(f"Error in /autodetect: {str(e)}")
@@ -661,23 +829,26 @@ def autodetect_violation():
             db.close()
         return jsonify({"error": f"An internal server error occurred: {str(e)}"}), 500
 
+@app.route('/init-paddle', methods=['POST'])
+def init_paddle():
+    if not paddle_available:
+        return jsonify({"message": "paddleocr package not installed"}), 400
+    try:
+        global reader_paddle
+        if reader_paddle is None:
+            import paddleocr as _paddleocr_mod
+            reader_paddle = _paddleocr_mod.PaddleOCR(use_textline_orientation=True, lang='en')
+        return jsonify({"message": "PaddleOCR initialized"}), 200
+    except Exception as e:
+        print(f"PaddleOCR init error: {e}")
+        return jsonify({"error": str(e)}), 500
 
-
-
-
-
-
-#
-#iot radar gun
-#
 @app.route('/iot/report-speeding', methods=['POST'])
 def iot_report_speeding():
-    #Check for the secret API Key 
     api_key = request.headers.get('X-API-Key')
     if api_key != 'my-secret-iot-key':
         return jsonify({"error": "Unauthorized"}), 401
 
-    #Get the data from the IoT device
     data = request.json
     plate_number = data.get('LicensePlate')
     speed = data.get('Speed')
@@ -686,10 +857,8 @@ def iot_report_speeding():
         return jsonify({"error": "Missing LicensePlate or Speed"}), 400
 
     try:
-        #same auto regis logic
         db = get_db_connection()
         cursor = db.cursor()
-
         cursor.execute("SELECT VehicleID FROM Vehicle WHERE LicensePlate = %s", (plate_number,))
         vehicle = cursor.fetchone()
         vehicle_id = None
@@ -700,17 +869,14 @@ def iot_report_speeding():
             count_result = cursor.fetchone()
             unknown_count = count_result[0]
             new_owner_name = f"UNKNOWN ({unknown_count + 1}) (Auto-Detected)"
-
             register_query = """INSERT INTO Vehicle(OwnerName, LicensePlate, VehicleType, Contact, Address) VALUES (%s, %s, %s, %s, %s)"""
             placeholder_values = (new_owner_name, plate_number, "UNKNOWN", "N/A", "N/A")
-            
             cursor.execute(register_query, placeholder_values)
             db.commit()
             vehicle_id = cursor.lastrowid
         else:
             vehicle_id = vehicle[0]
 
-        #calc and log fine and violation
         fine_amount = (speed - 90) * 10  
         if fine_amount < 100: fine_amount = 100
 
@@ -719,10 +885,8 @@ def iot_report_speeding():
             VALUES (%s, %s, %s, %s, %s)
         """
         values = (vehicle_id, "Speeding", fine_amount, "Simulated Radar (NH-48)", "IoT-Radar-01")
-        
         cursor.execute(query, values)
         db.commit()
-        
         cursor.close()
         db.close()
         
@@ -736,23 +900,13 @@ def iot_report_speeding():
             db.close()
         return jsonify({"error": f"An internal server error occurred: {str(e)}"}), 500
 
-
-
-
-
-
-# get violations by license plate
 @app.route('/get-violations/<license_plate>', methods=['GET'])
 def get_violations(license_plate):
-
     try:
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
-
-        # get vehicle ID from license plate
         cursor.execute("SELECT VehicleID FROM Vehicle WHERE LicensePlate = %s", (license_plate,))
         vehicle = cursor.fetchone()
 
@@ -762,8 +916,6 @@ def get_violations(license_plate):
             return jsonify({"error": "Vehicle not found"}), 404
 
         vehicle_id = vehicle[0]
-
-        # fetch violations
         cursor.execute("SELECT * FROM Violations WHERE VehicleID = %s", (vehicle_id,))
         violations = cursor.fetchall()
 
@@ -789,8 +941,6 @@ def get_violations(license_plate):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-#get violation from violation id
 @app.route('/get-violation/<int:violation_id>', methods=['GET'])
 @jwt_required()
 def get_violation(violation_id):
@@ -798,7 +948,6 @@ def get_violation(violation_id):
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
         cursor.execute("SELECT * FROM Violations WHERE ViolationID = %s", (violation_id,))
         violation = cursor.fetchone()
@@ -812,34 +961,23 @@ def get_violation(violation_id):
             "ViolationID": violation[0],
             "FineAmount": float(violation[4]),
             "Status": violation[5],
-        
         }
         cursor.close()
         db.close()
         return jsonify(violation_data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
 
-
-#fines
-
-# pay fine API
 @app.route('/pay-fine/<int:violation_id>', methods=['PUT'])
 @jwt_required()
 def pay_fine(violation_id):
     data = request.json
     payment_method = data.get("PaymentMethod", "Online")
-    card_details = data.get("CardDetails", None)  # Only for credit card payments
-
     try:
         db = get_db_connection()
         if not db:
             return jsonify({"error": "Database connection failed"}), 500
-
         cursor = db.cursor()
-        
-        # Verify violation exists and get amount
         cursor.execute("SELECT FineAmount FROM Violations WHERE ViolationID = %s", (violation_id,))
         violation = cursor.fetchone()
         
@@ -848,13 +986,9 @@ def pay_fine(violation_id):
             db.close()
             return jsonify({"error": "Violation not found"}), 404
 
-        #i havent added any payment gateway here yet
-        
-        # Update violation status
         cursor.execute("UPDATE Violations SET Status = 'Paid' WHERE ViolationID = %s", (violation_id,))
         db.commit()
 
-        # Record payment
         cursor.execute("""
             INSERT INTO Fines (ViolationID, PaymentStatus, PaymentMethod, DatePaid, Amount) 
             VALUES (%s, 'Completed', %s, NOW(), %s)
@@ -864,15 +998,10 @@ def pay_fine(violation_id):
         cursor.close()
         db.close()
         return jsonify({"message": "Fine paid successfully!"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-    
-
     except mysql.connector.Error as db_error:
         return jsonify({"error": f"Database error: {str(db_error)}"}), 500
     except Exception as e:
         return jsonify({"error": f"Payment processing failed: {str(e)}"}), 400
     
-# run the Flask app
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False, host='0.0.0.0')

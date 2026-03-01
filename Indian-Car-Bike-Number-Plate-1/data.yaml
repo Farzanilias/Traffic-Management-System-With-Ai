@@ -1,0 +1,12 @@
+names:
+- Indian_Number_Plate
+nc: 1
+roboflow:
+  license: CC BY 4.0
+  project: indian-car-bike-number-plate
+  url: https://universe.roboflow.com/indiannumberplatesdetection/indian-car-bike-number-plate/dataset/1
+  version: 1
+  workspace: indiannumberplatesdetection
+test: ../test/images
+train: ../train/images
+val: ../valid/images
