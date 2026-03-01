@@ -15,19 +15,16 @@ const AutoDetect = () => {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const samplingRef = useRef(null);
-    const SAMPLE_INTERVAL_MS = 1000; // sample every second by default
+    const SAMPLE_INTERVAL_MS = 1000; 
 
     const handleFileChange = (e) => {
         const selectedFile = e.target.files[0];
         setFile(selectedFile);
         setError(null);
         setSuccess(null);
-
         if (selectedFile) {
             const reader = new FileReader();
-            reader.onloadend = () => {
-                setPreview(reader.result);
-            };
+            reader.onloadend = () => setPreview(reader.result);
             reader.readAsDataURL(selectedFile);
         } else {
             setPreview(null);
@@ -95,10 +92,7 @@ const AutoDetect = () => {
                 body: formData,
             });
             const data = await response.json();
-            if (!response.ok) {
-                console.warn('Frame detection failed', data);
-                return;
-            }
+            if (!response.ok) return;
             if (data.annotated_image) setAnnotatedPreview(data.annotated_image);
             if (data.license_plate) setDetectedPlate(data.license_plate);
         } catch (err) {
@@ -114,11 +108,9 @@ const AutoDetect = () => {
             setError("Please select an image file first.");
             return;
         }
-
         setIsLoading(true);
         setError(null);
         setSuccess(null);
-
         const formData = new FormData();
         formData.append('image_file', file);
 
@@ -126,25 +118,14 @@ const AutoDetect = () => {
             const token = localStorage.getItem('token');
             const response = await fetch(`${BACKEND_URL}/autodetect`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
+                headers: { 'Authorization': `Bearer ${token}` },
                 body: formData,
             });
-
             const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || data.message || 'Detection failed');
-            }
+            if (!response.ok) throw new Error(data.error || data.message || 'Detection failed');
             setSuccess(data.message);
-            if (data.annotated_image) {
-                setAnnotatedPreview(data.annotated_image);
-            }
-            if (data.license_plate) {
-                setDetectedPlate(data.license_plate);
-            }
-
+            if (data.annotated_image) setAnnotatedPreview(data.annotated_image);
+            if (data.license_plate) setDetectedPlate(data.license_plate);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -154,36 +135,38 @@ const AutoDetect = () => {
 
     return (
         <div className="autodetect-container">
-            <h2 className="autodetect-title">Auto-Detect Violation</h2>
-            <p className="autodetect-subtitle">Upload an image to detect 'No Helmet' violations.</p>
-
-            <form onSubmit={handleSubmit} className="autodetect-form">
-                <div className="form-group">
+            <h2 className="section-title">Auto-Detect Violation</h2>
+            
+            <form onSubmit={handleSubmit} className="autodetect-form glass-panel">
+                
+                {/* Image Upload Area */}
+                <div className="form-group align-center">
+                    <label className="label-title">Change Image</label>
                     <label htmlFor="imageUpload" className="upload-label">
-                        {preview ? "Change Image" : "Select Image"}
+                        {preview ? "Image Selected - Click to Change" : "Choose Image File"}
                     </label>
-                    <input
-                        id="imageUpload"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="upload-input"
-                    />
+                    {/* Notice the class here */}
+                    <input id="imageUpload" type="file" accept="image/*" onChange={handleFileChange} className="upload-input" />
                 </div>
 
-                <div className="form-group video-group">
-                    <label htmlFor="videoUpload" className="upload-label">Upload Video (sample frames)</label>
-                    <input id="videoUpload" type="file" accept="video/*" onChange={handleVideoChange} />
+                {/* Video Upload Area */}
+                <div className="form-group align-center video-group">
+                    <label className="label-title">Upload Video (Sample Frames)</label>
+                    <label htmlFor="videoUpload" className="upload-label">
+                        {videoURL ? "Video Selected - Click to Change" : "Choose Video File"}
+                    </label>
+                    {/* Notice the class here hiding the ugly button! */}
+                    <input id="videoUpload" type="file" accept="video/*" onChange={handleVideoChange} className="upload-input" />
+                    
                     {videoURL && (
                         <div className="video-controls">
-                            <video ref={videoRef} src={videoURL} style={{maxWidth: '100%'}} controls muted />
-                            <div style={{marginTop:8}}>
-                                <button type="button" onClick={startSampling} disabled={isSampling}>Start Sampling</button>
-                                <button type="button" onClick={stopSampling} disabled={!isSampling}>Stop</button>
+                            <video ref={videoRef} src={videoURL} style={{maxWidth: '100%', borderRadius: '12px'}} controls muted />
+                            <div style={{marginTop: 15, display: 'flex', gap: '10px'}}>
+                                <button type="button" className="action-btn" onClick={startSampling} disabled={isSampling}>Start Sampling</button>
+                                <button type="button" className="cancel-btn" onClick={stopSampling} disabled={!isSampling}>Stop</button>
                             </div>
                         </div>
                     )}
-                    <canvas ref={canvasRef} style={{display:'none'}} />
                 </div>
 
                 {preview && (
@@ -194,23 +177,19 @@ const AutoDetect = () => {
 
                 {annotatedPreview && (
                     <div className="annotated-preview-container">
-                        <h4>Annotated Result</h4>
+                        <h4 style={{color: '#fff', marginBottom: '10px'}}>Annotated Result</h4>
                         <img src={annotatedPreview} alt="Annotated" className="annotated-preview" />
-                        {detectedPlate && <div className="detected-plate">Detected plate: {detectedPlate}</div>}
+                        {detectedPlate && <div className="detected-plate" style={{color: '#00f3ff', marginTop: '10px', fontWeight: 'bold'}}>Detected Plate: {detectedPlate}</div>}
                     </div>
                 )}
 
-                <button
-                    type="submit"
-                    className={`autodetect-button ${isLoading ? 'disabled' : ''}`}
-                    disabled={isLoading || !file}
-                >
+                <button type="submit" className={`autodetect-button ${isLoading ? 'disabled' : ''}`} disabled={isLoading || !file}>
                     {isLoading ? "Analyzing..." : "Analyze Image"}
                 </button>
             </form>
 
-            {success && <div className="success-message">{success}</div>}
-            {error && <div className="error-message">{error}</div>}
+            {success && <div className="success-message" style={{marginTop: '20px'}}>{success}</div>}
+            {error && <div className="error-message" style={{marginTop: '20px'}}>{error}</div>}
         </div>
     );
 };

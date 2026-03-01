@@ -1,63 +1,51 @@
-  import { useState } from 'react';
-  import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-  import Vehicles from './pages/Vehicles';
-  import Violations from './pages/Violations';
-  import Payments from './pages/Payments';
-  import Header from './components/Header';
-  import RegisterVehicle from './pages/RegisterVehicle';
-  import AddViolation from './pages/AddViolation';
-  import AutoDetect from './pages/AutoDetect';
-  import Dashboard from './pages/Dashboard';
-  import LandingPage from './pages/LandingPage';
-  import MyProfile from './pages/MyProfile';
-  import './App.css';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Header from './components/Header';
+import Dashboard from './pages/Dashboard';
+import Vehicles from './pages/Vehicles';
+import Violations from './pages/Violations';
+import Payments from './pages/Payments';
+import RegisterVehicle from './pages/RegisterVehicle';
+import AddViolation from './pages/AddViolation';
+import LandingPage from './pages/LandingPage';
+import AutoDetect from './pages/AutoDetect';
+import MyProfile from './pages/MyProfile';
 
-  function App() {
-    const [isAuthenticated, setIsAuthenticated] = useState(() => {
-      return Boolean(localStorage.getItem('token'));
-    });
+// Import our new 3D Background!
+import CyberBackground from './components/CyberBackground'; 
+import './App.css';
 
-    return (
-      <Router>
-        {/* Conditionally render header: Not on landing page */}
-        {isAuthenticated && <Header isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />}
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-        <div className={isAuthenticated ? "main-content" : "landing-main"}>
-          <Routes>
-            <Route path="/" element={
-              !isAuthenticated ? <LandingPage setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/dashboard" />
-            } />
-            <Route path="/login" element={
-              !isAuthenticated ? <LandingPage setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/dashboard" />
-            } />
-            <Route path="/dashboard" element={
-              isAuthenticated ? <Dashboard /> : <Navigate to="/login" />
-            } />
-            <Route path="/profile" element={
-              isAuthenticated ? <MyProfile /> : <Navigate to="/login" />
-            } />
-            <Route path="/vehicles" element={
-              isAuthenticated ? <Vehicles /> : <Navigate to="/login" />
-            } />
-            <Route path="/violations" element={
-              isAuthenticated ? <Violations /> : <Navigate to="/login" />
-            } />
-            <Route path="/payments" element={
-              isAuthenticated ? <Payments /> : <Navigate to="/login" />
-            } />
-            <Route path="/register-vehicle" element={
-              isAuthenticated ? <RegisterVehicle /> : <Navigate to="/login" />
-            } />
-            <Route path="/add-violation" element={
-              isAuthenticated ? <AddViolation /> : <Navigate to="/login" />
-            } />
-            <Route path="/autodetect" element={
-              isAuthenticated ? <AutoDetect /> : <Navigate to="/login" />
-            } />
-          </Routes>
-        </div>
-      </Router>
-    );
-  }
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+  }, []);
 
-  export default App;
+  return (
+    <Router>
+      {/* THIS MAKES THE 3D GAME RUN ON EVERY PAGE */}
+      <CyberBackground /> 
+
+      {isAuthenticated && <Header setIsAuthenticated={setIsAuthenticated} />}
+      <div className={isAuthenticated ? "main-content" : "landing-main"}>
+        <Routes>
+          <Route path="/" element={!isAuthenticated ? <LandingPage setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/dashboard" />} />
+          <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
+          <Route path="/vehicles" element={isAuthenticated ? <Vehicles /> : <Navigate to="/" />} />
+          <Route path="/violations" element={isAuthenticated ? <Violations /> : <Navigate to="/" />} />
+          <Route path="/payments" element={isAuthenticated ? <Payments /> : <Navigate to="/" />} />
+          <Route path="/register-vehicle" element={isAuthenticated ? <RegisterVehicle /> : <Navigate to="/" />} />
+          <Route path="/add-violation" element={isAuthenticated ? <AddViolation /> : <Navigate to="/" />} />
+          <Route path="/autodetect" element={isAuthenticated ? <AutoDetect /> : <Navigate to="/" />} />
+          <Route path="/profile" element={isAuthenticated ? <MyProfile /> : <Navigate to="/" />} />
+        </Routes>
+      </div>
+    </Router>
+  );
+}
+
+export default App;

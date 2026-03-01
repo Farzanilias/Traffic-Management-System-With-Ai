@@ -1,79 +1,95 @@
-.vehicles-container {
-  max-width: 1200px;
+.vehicles-container, .violations-container {
+  max-width: 1400px;
   margin: 2rem auto;
   padding: 0 2rem;
-  animation: slideUpFade 0.6s ease-out;
+  animation: cardReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.vehicles-header {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.vehicles-title {
-  color: #1e293b;
-  font-size: 2.2rem;
+.vehicles-title, .section-title {
+  color: #ffffff;
+  font-size: 2.8rem;
   font-weight: 700;
-  letter-spacing: -0.5px;
-  margin: 0;
+  letter-spacing: -1px;
+  margin-bottom: 2rem;
+  text-align: center;
 }
 
-.vehicles-list {
-  /* --- Figma Glass Panel --- */
-  background: rgba(255, 255, 255, 0.65);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04);
+.vehicles-list, .violations-table-container {
+  background: rgba(10, 15, 20, 0.6);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(40px) saturate(150%);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   overflow: hidden;
 }
 
-.vehicles-table {
+.vehicles-table, .violations-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 1rem;
 }
 
-.vehicles-table th {
-  background: rgba(79, 70, 229, 0.08); /* Soft indigo header */
-  color: #4f46e5;
-  padding: 1.2rem;
+.vehicles-table th, .violations-table th {
+  background: rgba(255, 255, 255, 0.02);
+  color: #94a3b8;
+  padding: 1.5rem;
   text-align: left;
   font-weight: 600;
-  border-bottom: 2px solid rgba(79, 70, 229, 0.1);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.vehicles-table td {
-  padding: 1.2rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-  color: #475569;
+.vehicles-table td, .violations-table td {
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
   font-weight: 500;
+  transition: all 0.3s ease;
 }
 
-.vehicles-table tr:last-child td { border-bottom: none; }
-.vehicles-table tr:hover { background-color: rgba(255, 255, 255, 0.8); }
+/* Floating Interactive Rows */
+.vehicles-table tr, .violations-table tr {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-/* Beautiful Red Trash Button */
-.delete-btn {
-  background: #fee2e2;
-  color: #ef4444;
-  border: none;
-  padding: 8px 12px;
+.vehicles-table tr:hover, .violations-table tr:hover { 
+  background-color: rgba(0, 243, 255, 0.03); 
+  transform: scale(1.01) translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+  position: relative;
+  z-index: 10;
+  border-radius: 12px;
+}
+
+.vehicles-table tr:hover td, .violations-table tr:hover td {
+  border-bottom-color: transparent;
+  color: #ffffff;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.5rem 1rem;
   border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.status-badge.paid { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.status-badge.unpaid { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
+.delete-btn {
+  background: transparent;
+  color: #64748b;
+  border: none;
+  font-size: 1.4rem;
   cursor: pointer;
   transition: all 0.3s;
-  font-size: 1.1rem;
 }
 .delete-btn:hover {
-  background: #fca5a5;
-  color: #b91c1c;
-  transform: scale(1.1) rotate(5deg);
-}
-
-@keyframes slideUpFade {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
+  color: #ef4444;
+  transform: scale(1.2) rotate(10deg);
+  filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.5));
 }

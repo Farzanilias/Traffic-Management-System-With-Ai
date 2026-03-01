@@ -2,95 +2,118 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100vh;
+  width: 100vw;
+  min-height: 100vh;
   padding: 2rem;
-  background: transparent; 
-  overflow: hidden; 
   position: relative;
+  overflow: hidden;
+  z-index: 10;
+  box-sizing: border-box;
+  background-color:transparent; 
 }
 
+/* --- 2D RETRO GAME ANIMATION --- */
+.game-bg {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  z-index: -3;
+  background: #0a0f18;
+  overflow: hidden;
+}
+
+.game-road {
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  height: 100%;
+  background: #111827;
+  border-left: 4px solid #374151;
+  border-right: 4px solid #374151;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.8) inset;
+}
+
+.road-lines {
+  position: absolute;
+  top: -100px; left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 200%;
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.6) 0, rgba(255, 255, 255, 0.6) 40px, transparent 40px, transparent 80px);
+  animation: roadMove 0.8s linear infinite;
+}
+
+/* The Player Bike */
+.player-bike {
+  position: absolute;
+  bottom: 15%;
+  font-size: 4rem;
+  animation: dodge 3.5s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 15px #00f3ff);
+}
+
+/* The Obstacle Cars */
+.obstacle-car {
+  position: absolute;
+  font-size: 3.5rem;
+  animation: driveDown linear infinite;
+}
+
+.car1 { left: 10%; animation-duration: 2.5s; animation-delay: 0s; filter: drop-shadow(0 0 15px #ef4444); }
+.car2 { left: 60%; animation-duration: 3.2s; animation-delay: 1.2s; filter: drop-shadow(0 0 15px #eab308); }
+.car3 { left: 30%; animation-duration: 2.8s; animation-delay: 2.5s; filter: drop-shadow(0 0 15px #3b82f6); }
+
+/* Keeps the game in the background so you can read text */
+.game-overlay {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: radial-gradient(circle, transparent 5%, rgba(3, 7, 18, 0.95) 80%);
+  z-index: -2;
+}
+
+/* Keyframe Animations */
+@keyframes roadMove {
+  0% { transform: translate(-50%, -80px); }
+  100% { transform: translate(-50%, 0); }
+}
+
+@keyframes driveDown {
+  0% { top: -100px; transform: scale(0.8); }
+  100% { top: 110vh; transform: scale(1.2); }
+}
+
+@keyframes dodge {
+  0% { left: 15%; transform: rotate(-15deg); }
+  50% { left: 65%; transform: rotate(15deg); }
+  100% { left: 35%; transform: rotate(-5deg); }
+}
+
+/* --- HERO CONTENT TEXT --- */
 .landing-center-layout {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 3rem;
-  z-index: 2;
-  transition: transform 0.1s ease-out;
+  gap: 3.5rem;
   width: 100%;
-  max-width: 800px;
+  max-width: 1000px;
 }
 
 .hero-content {
-  animation: fadeInDown 0.8s ease-out;
+  animation: cinematicFadeInDown 1.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.hero-logo {
-  height: 120px;
-  width: auto;
-  margin-bottom: 1.5rem;
-  filter: drop-shadow(0px 10px 15px rgba(0,0,0,0.1));
-}
+.hero-logo { height: 160px; margin-bottom: 2rem; filter: drop-shadow(0 0 30px rgba(0, 243, 255, 0.4)); animation: logoBreathe 6s ease-in-out infinite; }
+.hero-title { font-size: 5.5rem; font-weight: 700; margin: 0 0 0.5rem 0; color: #ffffff; letter-spacing: -3px; text-shadow: 0 20px 50px rgba(0, 0, 0, 0.8); }
+.hero-subtitle { font-size: 2.2rem; font-weight: 600; margin: 0 0 1.5rem 0; background: linear-gradient(90deg, #00f3ff 0%, #b026ff 50%, #00f3ff 100%); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 4px; animation: textShine 4s linear infinite; }
+.hero-slogan { font-size: 1.3rem; color: #e2e8f0; letter-spacing: 2px; }
+.hero-login-wrapper { width: 100%; max-width: 450px; animation: cinematicFadeInUp 1.5s 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
-.floating-logo {
-  animation: hoverFloat 4s ease-in-out infinite;
-}
-
-.hero-title {
-  font-size: 3.8rem;
-  font-weight: 700;
-  margin: 0;
-  color: #1e293b;
-  letter-spacing: -1px;
-}
-
-.hero-subtitle {
-  font-size: 2rem;
-  font-weight: 500;
-  margin: 0.5rem 0 1rem;
-  background: linear-gradient(135deg, #4f46e5, #0ea5e9);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.hero-slogan {
-  font-size: 1.2rem;
-  font-weight: 400;
-  color: #64748b;
-}
-
-.hero-login-wrapper {
-  width: 100%;
-  max-width: 420px;
-  animation: fadeInUp 0.8s 0.3s ease-out backwards;
-  padding: 1rem;
-}
-
-/* --- Blobs --- */
-.blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.6;
-  z-index: 1;
-}
-.blob-1 { width: 500px; height: 500px; background: #fdfbfb; animation: floatBlob 20s infinite alternate; top: -10%; left: -10%; }
-.blob-2 { width: 400px; height: 400px; background: #e2ebf0; animation: floatBlob 25s infinite alternate-reverse; bottom: -10%; right: -10%; }
-.blob-3 { width: 300px; height: 300px; background: #a1c4fd; animation: floatBlob 15s infinite alternate; top: 40%; left: 60%; }
-
-@keyframes hoverFloat {
-  0% { transform: translateY(0); }
-  50% { transform: translateY(-15px); }
-  100% { transform: translateY(0); }
-}
-@keyframes fadeInDown {
-  from { opacity: 0; transform: translateY(-30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+@keyframes logoBreathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+@keyframes cinematicFadeInDown { from { opacity: 0; transform: translateY(-60px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cinematicFadeInUp { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes textShine { to { background-position: 200% center; } }

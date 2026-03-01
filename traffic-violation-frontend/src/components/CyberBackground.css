@@ -1,0 +1,77 @@
+/* The 3D Camera Lens */
+.cyber-container {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  z-index: -10; /* Forces it behind ALL your pages */
+  background: #030712;
+  overflow: hidden;
+  perspective: 800px; /* This creates the 3D depth */
+}
+
+/* The tilted 3D world */
+.cyber-scene {
+  position: absolute;
+  bottom: -40%; left: 0; width: 100%; height: 150%;
+  transform-style: preserve-3d;
+  transform: rotateX(75deg); /* Tilts the floor flat into the screen */
+}
+
+/* The glowing moving grid */
+.cyber-floor {
+  position: absolute;
+  width: 200%; height: 200%;
+  left: -50%; top: -50%;
+  background-image:
+    linear-gradient(rgba(0, 243, 255, 0.4) 3px, transparent 3px),
+    linear-gradient(90deg, rgba(176, 38, 255, 0.4) 3px, transparent 3px);
+  background-size: 120px 120px;
+  animation: moveFloor 1.5s linear infinite;
+  box-shadow: inset 0 0 500px #000;
+}
+
+@keyframes moveFloor {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 120px; }
+}
+
+.cyber-overlay {
+  position: absolute; top:0; left:0; width:100%; height:100%;
+  background: radial-gradient(circle at center, transparent 0%, rgba(3, 7, 18, 0.95) 85%);
+  pointer-events: none;
+}
+
+/* --- 3D VEHICLES --- */
+.cyber-car, .cyber-bike {
+  position: absolute;
+  font-size: 6rem;
+  transform-style: preserve-3d;
+}
+
+/* Because the floor is tilted 75deg, we rotate the vehicles -75deg so they stand up perfectly straight facing the camera! */
+.cyber-bike {
+  left: 50%;
+  bottom: 15%;
+  animation: ride3D 4s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 25px #00f3ff);
+}
+
+.cyber-car {
+  animation: driveTowards 3s linear infinite;
+}
+
+.car-a { left: 25%; animation-duration: 2s; filter: drop-shadow(0 0 20px #ef4444); }
+.car-b { left: 65%; animation-duration: 2.8s; animation-delay: 0.8s; filter: drop-shadow(0 0 20px #3b82f6); }
+.car-c { left: 45%; animation-duration: 2.4s; animation-delay: 1.5s; filter: drop-shadow(0 0 20px #eab308); }
+
+@keyframes ride3D {
+  0% { transform: translateX(-200px) rotateX(-75deg) rotateY(-20deg); }
+  50% { transform: translateX(200px) rotateX(-75deg) rotateY(20deg); }
+  100% { transform: translateX(-50px) rotateX(-75deg) rotateY(-10deg); }
+}
+
+/* Simulates driving towards the camera by scaling up from 0 to massive */
+@keyframes driveTowards {
+  0% { top: 0%; transform: rotateX(-75deg) scale(0.1); opacity: 0; }
+  10% { opacity: 1; }
+  100% { top: 120%; transform: rotateX(-75deg) scale(2.5); opacity: 0; }
+}
