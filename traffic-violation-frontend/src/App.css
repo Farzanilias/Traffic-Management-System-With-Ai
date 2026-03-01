@@ -1,75 +1,64 @@
-/* App.css (NEW) */
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 
 body {
   margin: 0;
-  font-family: 'Roboto', sans-serif;
-  
-  /* --- NEW DARK BACKGROUND --- */
-  background: #0d1117; /* The dark background from your landing page */
-  color: #c9d1d9; /* A light, soft text color for the body */
-  /* --- END NEW --- */
+  font-family: 'Poppins', sans-serif;
+  /* --- NEW LIGHT, AIRY BACKGROUND --- */
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  color: #2c3e50; /* Slate grey text for high readability */
 }
 
-/* The yellow header styles are GONE.
-  We are moving them to Header.css
-*/
-
-/* This is the main wrapper for all your logged-in pages.
-  We add the animated blobs here so they are on EVERY page.
-*/
 .main-content {
   position: relative;
-  overflow: hidden; /* Contains the blobs */
+  overflow: hidden; 
   padding: 2rem;
-  padding-top: 100px; /* Give space for the new floating header */
+  padding-top: 100px; 
   min-height: 100vh;
   box-sizing: border-box;
 }
 
-/* This class is for the landing page */
 .landing-main {
   padding-top: 0;
 }
 
-/* --- The "Bubbly" Blobs --- */
-/* We add them to .main-content to have them on every page */
+/* --- The New Pastel Floating Blobs --- */
 .main-content::before,
 .main-content::after {
   content: '';
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px); /* This makes them soft */
-  z-index: -1; /* Behind the content */
+  filter: blur(80px); 
+  z-index: -1; 
 }
 
-/* Blob 1: Your Yellow */
 .main-content::before {
+  width: 500px;
+  height: 500px;
+  background: #ff9a9e; /* Soft pink/orange */
+  opacity: 0.5;
+  animation: floatBlob 20s infinite alternate ease-in-out;
+}
+
+.main-content::after {
   width: 400px;
   height: 400px;
-  background: #f4a400;
-  opacity: 0.3;
-  animation: moveBlob 20s infinite alternate;
+  background: #a1c4fd; /* Soft blue */
+  opacity: 0.5;
+  animation: floatBlob 25s infinite alternate-reverse ease-in-out;
 }
 
-/* Blob 2: A Cool Blue */
-.main-content::after {
-  width: 300px;
-  height: 300px;
-  background: #2a64a3;
-  opacity: 0.3;
-  animation: moveBlob 25s infinite alternate-reverse;
+@keyframes floatBlob {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(300px, -150px) scale(1.1); }
+  100% { transform: translate(-100px, 100px) scale(0.9); }
 }
 
-/* --- The Animations --- */
-@keyframes moveBlob {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(300px, -150px) scale(1.2);
-  }
-  100% {
-    transform: translate(-100px, 100px) scale(0.9);
-  }
+/* Global Figma-style Glass Panel Utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
 }
