@@ -72,7 +72,7 @@ const Dashboard = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Total Vehicles</h3>
-                        <p>{stats.total_vehicles}</p>
+                        <p>{stats.total_vehicles || 0}</p>
                     </div>
                 </div>
                 <div className="stat-box">
@@ -81,7 +81,7 @@ const Dashboard = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Total Violations</h3>
-                        <p>{stats.total_violations}</p>
+                        <p>{stats.total_violations || 0}</p>
                     </div>
                 </div>
                 <div className="stat-box">
@@ -90,7 +90,7 @@ const Dashboard = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Most Common Violation</h3>
-                        <p>{stats.top_violation}</p>
+                        <p>{stats.top_violation || "N/A"}</p>
                     </div>
                 </div>
                 <div className="stat-box">
@@ -99,7 +99,8 @@ const Dashboard = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Total Revenue</h3>
-                        <p className="revenue">₹{stats.total_paid.toFixed(2)}</p>
+                        {/* FIXED: Added fallback ( || 0 ) before calling .toFixed(2) */}
+                        <p className="revenue">₹{(stats.total_paid || 0).toFixed(2)}</p>
                     </div>
                 </div>
                 <div className="stat-box">
@@ -108,7 +109,8 @@ const Dashboard = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Outstanding Fines</h3>
-                        <p className="outstanding">₹{stats.total_unpaid.toFixed(2)}</p>
+                        {/* FIXED: Added fallback ( || 0 ) before calling .toFixed(2) */}
+                        <p className="outstanding">₹{(stats.total_unpaid || 0).toFixed(2)}</p>
                     </div>
                 </div>
             </div>
