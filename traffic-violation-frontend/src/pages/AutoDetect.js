@@ -1,89 +1,66 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import './AutoDetect.css'; 
 import { BACKEND_URL } from '../services/api';
 
 const AutoDetect = () => {
-    const [file, setFile] = useState(null);
-    const [preview, setPreview] = useState(null);
+    // Media States
+    const [imageFile, setImageFile] = useState(null);
+    const [videoFile, setVideoFile] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
+    const [videoPreviewURL, setVideoPreviewURL] = useState(null);
+    
+    // Process States
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
-    const [annotatedPreview, setAnnotatedPreview] = useState(null);
+    
+    // Result States
+    const [annotatedImg, setAnnotatedImg] = useState(null);
+    const [processedVid, setProcessedVid] = useState(null);
     const [detectedPlate, setDetectedPlate] = useState(null);
-    const [videoURL, setVideoURL] = useState(null);
-    const [isSampling, setIsSampling] = useState(false);
-    const videoRef = useRef(null);
-    const canvasRef = useRef(null);
-    const samplingRef = useRef(null);
-    const SAMPLE_INTERVAL_MS = 1000; 
 
-    const handleFileChange = (e) => {
-        const selectedFile = e.target.files[0];
-        setFile(selectedFile);
-        setError(null);
-        setSuccess(null);
-        if (selectedFile) {
-            const reader = new FileReader();
-            reader.onloadend = () => setPreview(reader.result);
-            reader.readAsDataURL(selectedFile);
-        } else {
-            setPreview(null);
-        }
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setImageFile(file);
+        setVideoFile(null); 
+        setVideoPreviewURL(null); 
+        resetResults();
+        
+        const reader = new FileReader();
+        reader.onloadend = () => setImagePreview(reader.result);
+        reader.readAsDataURL(file);
     };
 
     const handleVideoChange = (e) => {
         const file = e.target.files[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            setVideoURL(url);
-            setAnnotatedPreview(null);
-            setDetectedPlate(null);
-        } else {
-            setVideoURL(null);
-        }
+        if (!file) return;
+        setVideoFile(file);
+        setImageFile(null); 
+        setImagePreview(null); 
+        resetResults();
+        
+        setVideoPreviewURL(URL.createObjectURL(file));
     };
 
-    const startSampling = () => {
-        if (!videoRef.current || !videoURL) return;
-        if (isSampling) return;
-        setIsSampling(true);
-        videoRef.current.play().catch(() => {});
-        samplingRef.current = setInterval(sampleFrame, SAMPLE_INTERVAL_MS);
+    const resetResults = () => {
+        setError(null); 
+        setSuccess(null); 
+        setAnnotatedImg(null); 
+        setProcessedVid(null); 
+        setDetectedPlate(null);
     };
 
-    const stopSampling = () => {
-        if (samplingRef.current) {
-            clearInterval(samplingRef.current);
-            samplingRef.current = null;
-        }
-        if (videoRef.current) try { videoRef.current.pause(); } catch(e){}
-        setIsSampling(false);
-    };
-
-    const sampleFrame = () => {
-        const videoEl = videoRef.current;
-        const canvas = canvasRef.current;
-        if (!videoEl || !canvas) return;
-        const ctx = canvas.getContext('2d');
-        canvas.width = videoEl.videoWidth || 640;
-        canvas.height = videoEl.videoHeight || 360;
-        try {
-            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(async (blob) => {
-                if (!blob) return;
-                await sendFrameBlob(blob);
-            }, 'image/jpeg', 0.8);
-        } catch (e) {
-            console.error('Frame sample error', e);
-        }
-    };
-
-    const sendFrameBlob = async (blob) => {
+    const handleImageSubmit = async (e) => {
+        e.preventDefault();
+        if (!imageFile) return;
+        
         setIsLoading(true);
-        setError(null);
+        resetResults();
+        
         const formData = new FormData();
-        const fileObj = new File([blob], 'frame.jpg', { type: 'image/jpeg' });
-        formData.append('image_file', fileObj);
+        formData.append('image_file', imageFile);
+
         try {
             const token = localStorage.getItem('token');
             const response = await fetch(`${BACKEND_URL}/autodetect`, {
@@ -92,40 +69,50 @@ const AutoDetect = () => {
                 body: formData,
             });
             const data = await response.json();
-            if (!response.ok) return;
-            if (data.annotated_image) setAnnotatedPreview(data.annotated_image);
+            
+            if (!response.ok) throw new Error(data.error || 'Detection failed');
+            
+            setSuccess(data.message);
+            if (data.annotated_image) setAnnotatedImg(data.annotated_image);
             if (data.license_plate) setDetectedPlate(data.license_plate);
         } catch (err) {
-            console.error(err);
+            setError(err.message);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!file) {
-            setError("Please select an image file first.");
-            return;
-        }
+    const handleVideoSubmit = async () => {
+        if (!videoFile) return;
+        
         setIsLoading(true);
-        setError(null);
-        setSuccess(null);
+        resetResults();
+        
         const formData = new FormData();
-        formData.append('image_file', file);
+        formData.append('video_file', videoFile);
 
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch(`${BACKEND_URL}/autodetect`, {
+            // Calls the new continuous video processing route!
+            const response = await fetch(`${BACKEND_URL}/autodetect-video`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData,
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || data.message || 'Detection failed');
+            
+            if (!response.ok) throw new Error(data.error || 'Video processing failed');
+            
             setSuccess(data.message);
-            if (data.annotated_image) setAnnotatedPreview(data.annotated_image);
+            if (data.annotated_image) setAnnotatedImg(data.annotated_image);
             if (data.license_plate) setDetectedPlate(data.license_plate);
+            if (data.video_url) {
+                // Use the video_url from response (preferred)
+                setProcessedVid(`${BACKEND_URL}${data.video_url}`);
+            } else if (data.video_filename) {
+                // Fallback to constructing the URL
+                setProcessedVid(`${BACKEND_URL}/evidence/${data.video_filename}`);
+            }
         } catch (err) {
             setError(err.message);
         } finally {
@@ -135,61 +122,90 @@ const AutoDetect = () => {
 
     return (
         <div className="autodetect-container">
-            <h2 className="section-title">Auto-Detect Violation</h2>
+            <h2 className="section-title">SafeRide AI Command Center</h2>
             
-            <form onSubmit={handleSubmit} className="autodetect-form glass-panel">
+            <div className="autodetect-form glass-panel">
                 
-                {/* Image Upload Area */}
+                {/* --- IMAGE UPLOAD SECTION --- */}
                 <div className="form-group align-center">
-                    <label className="label-title">Change Image</label>
-                    <label htmlFor="imageUpload" className="upload-label">
-                        {preview ? "Image Selected - Click to Change" : "Choose Image File"}
+                    <label className="label-title">Photo Analysis</label>
+                    <label htmlFor="imgInp" className="upload-label">
+                        {imageFile ? "Image Loaded - Click to Change" : "Upload Evidence Photo"}
                     </label>
-                    {/* Notice the class here */}
-                    <input id="imageUpload" type="file" accept="image/*" onChange={handleFileChange} className="upload-input" />
-                </div>
-
-                {/* Video Upload Area */}
-                <div className="form-group align-center video-group">
-                    <label className="label-title">Upload Video (Sample Frames)</label>
-                    <label htmlFor="videoUpload" className="upload-label">
-                        {videoURL ? "Video Selected - Click to Change" : "Choose Video File"}
-                    </label>
-                    {/* Notice the class here hiding the ugly button! */}
-                    <input id="videoUpload" type="file" accept="video/*" onChange={handleVideoChange} className="upload-input" />
+                    <input id="imgInp" type="file" accept="image/*" onChange={handleImageChange} className="upload-input" />
                     
-                    {videoURL && (
-                        <div className="video-controls">
-                            <video ref={videoRef} src={videoURL} style={{maxWidth: '100%', borderRadius: '12px'}} controls muted />
-                            <div style={{marginTop: 15, display: 'flex', gap: '10px'}}>
-                                <button type="button" className="action-btn" onClick={startSampling} disabled={isSampling}>Start Sampling</button>
-                                <button type="button" className="cancel-btn" onClick={stopSampling} disabled={!isSampling}>Stop</button>
-                            </div>
+                    {imagePreview && (
+                        <div className="image-preview-container" style={{marginTop: '15px'}}>
+                            <img src={imagePreview} className="image-preview" alt="Input" style={{maxWidth: '100%', borderRadius: '8px'}} />
                         </div>
+                    )}
+                    
+                    {imageFile && (
+                        <button onClick={handleImageSubmit} className={`autodetect-button ${isLoading ? 'disabled' : ''}`} disabled={isLoading} style={{marginTop: '15px', width: '100%'}}>
+                            {isLoading ? "Scanning Image..." : "Analyze Photo"}
+                        </button>
                     )}
                 </div>
 
-                {preview && (
-                    <div className="image-preview-container">
-                        <img src={preview} alt="Selected" className="image-preview" />
+                <hr style={{margin: '30px 0', borderColor: 'rgba(255,255,255,0.1)'}} />
+
+                {/* --- VIDEO UPLOAD SECTION --- */}
+                <div className="form-group align-center video-group">
+                    <label className="label-title">Continuous Video Enforcement</label>
+                    <label htmlFor="vidInp" className="upload-label">
+                        {videoFile ? "Video Loaded - Click to Change" : "Upload Traffic Clip (.mp4)"}
+                    </label>
+                    <input id="vidInp" type="file" accept="video/*" onChange={handleVideoChange} className="upload-input" />
+                    
+                    {videoPreviewURL && !processedVid && (
+                        <div className="video-controls" style={{marginTop: '15px'}}>
+                            <video src={videoPreviewURL} style={{maxWidth: '100%', borderRadius: '12px'}} controls muted />
+                        </div>
+                    )}
+                    
+                    {videoFile && (
+                        <button onClick={handleVideoSubmit} className={`autodetect-button ${isLoading ? 'disabled' : ''}`} disabled={isLoading} style={{marginTop: '15px', width: '100%', backgroundColor: '#2196F3'}}>
+                            {isLoading ? "Processing Full Video (Please Wait)..." : "Analyze Full Video"}
+                        </button>
+                    )}
+                </div>
+                
+                {/* --- STATUS MESSAGES --- */}
+                {isLoading && <div className="loading-state" style={{marginTop: '20px', color: '#00f3ff', textAlign: 'center'}}>AI Engines processing data. This may take a moment depending on file size...</div>}
+                {success && <div className="success-message" style={{marginTop: '20px', textAlign: 'center'}}>{success}</div>}
+                {error && <div className="error-message" style={{marginTop: '20px', textAlign: 'center'}}>{error}</div>}
+
+                {/* --- MASTER RESULTS VIEW --- */}
+                {(annotatedImg || processedVid) && (
+                    <div className="annotated-preview-container" style={{marginTop: '30px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)'}}>
+                        <h3 style={{color: '#00f3ff', marginBottom: '15px', textAlign: 'center'}}>AI Evidence Report</h3>
+                        
+                        {detectedPlate && (
+                            <div className="detected-plate" style={{color: '#00ff00', marginBottom: '20px', fontSize: '22px', fontWeight: 'bold', backgroundColor: 'rgba(0,0,0,0.7)', padding: '15px', borderRadius: '8px', textAlign: 'center', border: '1px solid #00ff00'}}>
+                                PLATE DETECTED: {detectedPlate}
+                            </div>
+                        )}
+
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '20px'}}>
+                            {/* Show the best extracted frame */}
+                            {annotatedImg && (
+                                <div>
+                                    <p style={{color: '#aaa', marginBottom: '5px'}}>High-Clarity Capture (API Sent)</p>
+                                    <img src={annotatedImg} alt="AI Result" style={{maxWidth: '100%', borderRadius: '12px', border: '2px solid #00f3ff'}} />
+                                </div>
+                            )}
+
+                            {/* Show the fully processed continuous video */}
+                            {processedVid && (
+                                <div>
+                                    <p style={{color: '#aaa', marginBottom: '5px'}}>Continuous Tracking Feed</p>
+                                    <video src={processedVid} style={{maxWidth: '100%', borderRadius: '12px', border: '2px solid #ff9800'}} controls autoPlay loop muted />
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
-
-                {annotatedPreview && (
-                    <div className="annotated-preview-container">
-                        <h4 style={{color: '#fff', marginBottom: '10px'}}>Annotated Result</h4>
-                        <img src={annotatedPreview} alt="Annotated" className="annotated-preview" />
-                        {detectedPlate && <div className="detected-plate" style={{color: '#00f3ff', marginTop: '10px', fontWeight: 'bold'}}>Detected Plate: {detectedPlate}</div>}
-                    </div>
-                )}
-
-                <button type="submit" className={`autodetect-button ${isLoading ? 'disabled' : ''}`} disabled={isLoading || !file}>
-                    {isLoading ? "Analyzing..." : "Analyze Image"}
-                </button>
-            </form>
-
-            {success && <div className="success-message" style={{marginTop: '20px'}}>{success}</div>}
-            {error && <div className="error-message" style={{marginTop: '20px'}}>{error}</div>}
+            </div>
         </div>
     );
 };
