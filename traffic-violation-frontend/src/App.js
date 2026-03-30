@@ -11,8 +11,8 @@ import LandingPage from './pages/LandingPage';
 import AutoDetect from './pages/AutoDetect';
 import MyProfile from './pages/MyProfile';
 
-// Import our new 3D Background!
-import CyberBackground from './components/CyberBackground'; 
+// Import Professional Background
+import ProfessionalBackground from './components/ProfessionalBackground'; 
 import './App.css';
 
 function App() {
@@ -27,8 +27,8 @@ function App() {
 
   return (
     <Router>
-      {/* THIS MAKES THE 3D GAME RUN ON EVERY PAGE */}
-      <CyberBackground /> 
+      {/* Professional Background on all pages */}
+      <ProfessionalBackground /> 
 
       {isAuthenticated && <Header setIsAuthenticated={setIsAuthenticated} />}
       <div className={isAuthenticated ? "main-content" : "landing-main"}>

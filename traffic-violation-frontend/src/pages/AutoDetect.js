@@ -63,20 +63,56 @@ const AutoDetect = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch(`${BACKEND_URL}/autodetect`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
-            });
-            const data = await response.json();
             
-            if (!response.ok) throw new Error(data.error || 'Detection failed');
+            // Set timeout for image processing (60 seconds)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
             
-            setSuccess(data.message);
+            let response;
+            try {
+                response = await fetch(`${BACKEND_URL}/autodetect`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData,
+                    signal: controller.signal
+                });
+            } catch (fetchErr) {
+                clearTimeout(timeoutId);
+                if (fetchErr.name === 'AbortError') {
+                    throw new Error('Request timed out');
+                }
+                throw new Error('Cannot reach the backend server');
+            }
+            
+            clearTimeout(timeoutId);
+            
+            // Parse JSON response
+            let data;
+            try {
+                data = await response.json();
+            } catch (parseErr) {
+                throw new Error(`Server returned invalid response (status: ${response.status})`);
+            }
+            
+            // Check response status
+            if (!response.ok) {
+                throw new Error(data.error || data.message || `Server error: ${response.status}`);
+            }
+            
+            setSuccess(data.message || 'Detection completed');
             if (data.annotated_image) setAnnotatedImg(data.annotated_image);
             if (data.license_plate) setDetectedPlate(data.license_plate);
         } catch (err) {
-            setError(err.message);
+            if (err.message.includes('timed out')) {
+                setError('Detection took too long. Try a smaller image.');
+            } else if (err.message.includes('Cannot reach')) {
+                setError('Cannot connect to backend. Is the server running?');
+            } else if (err.message.includes('invalid response')) {
+                setError(err.message);
+            } else {
+                setError(err.message || 'Detection failed. Check server logs.');
+            }
+            console.error('Image detection error:', err);
         } finally {
             setIsLoading(false);
         }
@@ -93,28 +129,67 @@ const AutoDetect = () => {
 
         try {
             const token = localStorage.getItem('token');
-            // Calls the new continuous video processing route!
-            const response = await fetch(`${BACKEND_URL}/autodetect-video`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
-            });
-            const data = await response.json();
             
-            if (!response.ok) throw new Error(data.error || 'Video processing failed');
+            // Set timeout for video processing (10 minutes for large videos)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 600000);
             
-            setSuccess(data.message);
+            let response;
+            try {
+                response = await fetch(`${BACKEND_URL}/autodetect-video`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData,
+                    signal: controller.signal
+                });
+            } catch (fetchErr) {
+                clearTimeout(timeoutId);
+                if (fetchErr.name === 'AbortError') {
+                    throw new Error('Request timed out');
+                }
+                throw new Error('Cannot reach the backend server');
+            }
+            
+            clearTimeout(timeoutId);
+            
+            // Parse JSON response
+            let data;
+            try {
+                data = await response.json();
+            } catch (parseErr) {
+                throw new Error(`Server returned invalid response (status: ${response.status})`);
+            }
+            
+            // Check response status
+            if (!response.ok) {
+                throw new Error(data.error || data.message || `Server error: ${response.status}`);
+            }
+            
+            setSuccess(data.message || 'Video processed successfully');
             if (data.annotated_image) setAnnotatedImg(data.annotated_image);
             if (data.license_plate) setDetectedPlate(data.license_plate);
+            
+            // Set processed video URL
             if (data.video_url) {
-                // Use the video_url from response (preferred)
                 setProcessedVid(`${BACKEND_URL}${data.video_url}`);
             } else if (data.video_filename) {
-                // Fallback to constructing the URL
                 setProcessedVid(`${BACKEND_URL}/evidence/${data.video_filename}`);
+            } else {
+                console.warn('No video URL in response:', data);
             }
         } catch (err) {
-            setError(err.message);
+            if (err.message.includes('timed out')) {
+                setError('⏱️ Video processing exceeded 10 minutes. Try a shorter video (under 5 MB recommended).');
+            } else if (err.message.includes('Cannot reach')) {
+                setError('🔴 Cannot connect to backend. Ensure the Flask server is running on port 5000.');
+            } else if (err.message.includes('invalid response')) {
+                setError(`⚠️ Backend error: ${err.message}`);
+            } else if (err.message.includes('Unauthorized')) {
+                setError('🔒 Session expired. Please login again.');
+            } else {
+                setError(err.message || '❌ Video processing failed. Check backend logs.');
+            }
+            console.error('Video processing error:', err);
         } finally {
             setIsLoading(false);
         }

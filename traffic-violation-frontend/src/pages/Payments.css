@@ -1,7 +1,8 @@
 .form-container-wrapper, .violation-container, .autodetect-container, .register-container, .payments-container {
-  max-width: 650px;
+  max-width: 700px;
   margin: 0 auto;
   animation: cardReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 0 1.5rem;
 }
 
 .section-title {

@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import mysql.connector
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity, verify_jwt_in_request
 from flask_bcrypt import Bcrypt
 import uuid
 import os
@@ -244,7 +244,8 @@ def detect_violation_and_plate(img, skip_plate=False):
             return "", None, annotated_img
             
     except Exception as e:
-        print(f"Vehicle detection error: {e} - proceeding with helmet check anyway")
+        print(f"Vehicle detection error: {e} - skipping helmet check to avoid false positives")
+        return "", None, annotated_img
     
     # Step 2: Run helmet detection only if motorcycle is present
     try:
@@ -395,9 +396,21 @@ def detect_violation_and_plate(img, skip_plate=False):
 
     return violation_type_found, plate_text_clean, annotated_img
 
-@app.route('/autodetect', methods=['POST'])
-@jwt_required()
+@app.route('/autodetect', methods=['POST', 'OPTIONS'])
 def autodetect_violation():
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = jsonify({"message": "OK"})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        return response, 200
+    
+    # Verify JWT token for POST request
+    try:
+        verify_jwt_in_request()
+    except Exception as e:
+        return jsonify({"error": f"Unauthorized: {str(e)}"}), 401
     if 'image_file' not in request.files:
         return jsonify({"error": "No image file provided"}), 400
 
@@ -520,24 +533,48 @@ def autodetect_violation():
 
         resp = jsonify(response_payload)
         resp.headers.add('Access-Control-Allow-Origin', '*')
+        resp.headers.add('Content-Type', 'application/json')
         return resp, 201
 
     except Exception as e:
         print(f"Error in /autodetect: {str(e)}")
+        import traceback
+        traceback.print_exc()
         if 'db' in locals() and db.is_connected():
-            db.rollback()
-            cursor.close()
-            db.close()
-        resp = jsonify({"error": f"An internal server error occurred: {str(e)}"})
+            try:
+                db.rollback()
+                cursor.close()
+                db.close()
+            except:
+                pass
+        error_message = str(e) if str(e) else "Unknown detection error"
+        resp = jsonify({"error": f"Detection failed: {error_message}", "status": "error"})
         resp.headers.add('Access-Control-Allow-Origin', '*')
+        resp.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        resp.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        resp.headers.add('Content-Type', 'application/json')
         return resp, 500
 
 # =====================================================================
 # FAST CPU VIDEO PIPELINE (No API, Frame Buffering)
 # =====================================================================
-@app.route('/autodetect-video', methods=['POST'])
-@jwt_required()
+@app.route('/autodetect-video', methods=['POST', 'OPTIONS'])
 def autodetect_video():
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = jsonify({"message": "OK"})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        return response, 200
+    
+    # Verify JWT token for POST request
+    try:
+        verify_jwt_in_request()
+    except Exception as e:
+        return jsonify({"error": f"Unauthorized: {str(e)}"}), 401
+    
+    # Actual POST handling
     if 'video_file' not in request.files:
         return jsonify({"error": "No video file provided"}), 400
 
@@ -603,6 +640,8 @@ def autodetect_video():
             
             if frame_count % 30 == 0:
                 print(f"  Processed {frame_count} frames... (Detection every {detection_frequency} frames)")
+                import sys
+                sys.stdout.flush()  # Force flush to send progress updates
 
         cap.release()
         out.release()
@@ -640,16 +679,19 @@ def autodetect_video():
         resp.headers.add('Access-Control-Allow-Origin', '*')
         resp.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         resp.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        resp.headers.add('Content-Type', 'application/json')
         return resp, 201
 
     except Exception as e:
         print(f"Error in continuous /autodetect-video: {str(e)}")
         import traceback
         traceback.print_exc()
-        resp = jsonify({"error": f"An internal server error occurred processing the video: {str(e)}"})
+        error_message = str(e) if str(e) else "Unknown video processing error"
+        resp = jsonify({"error": f"Video processing failed: {error_message}", "status": "error"})
         resp.headers.add('Access-Control-Allow-Origin', '*')
         resp.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         resp.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        resp.headers.add('Content-Type', 'application/json')
         return resp, 500
 
 @app.route('/init-paddle', methods=['POST'])
